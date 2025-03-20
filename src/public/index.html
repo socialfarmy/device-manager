@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SocialFarmy ADB Manager</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+</head>
+<body class="container mt-4">
+    <h2>SocialFarmy ADB Device Manager</h2>
+
+    <!-- Información de puertos y URL de Ngrok -->
+    <div class="mb-3 mt-5">
+        <p><strong>Appium Port:</strong> <span id="port">Loading...</span></p>
+        <p><strong>API URL:</strong> <span id="ngrokUrl">Loading...</span></p>
+        <p><strong>Public Port:</strong> <span id="proxyPort">Loading...</span></p>
+    </div>
+
+    <hr>
+
+    <div class="mb-3">
+        <label for="accountAPI" class="form-label"><strong>Account API</strong></label>
+        <input type="text" class="form-control" id="accountAPI" placeholder="Enter Account API">
+        <small>Enter the Account API the, you can get account api here: <a href="https://app.socialfarmy.com/my-profile" target="_blank">SocialFarmy - My Profile</a></small>
+    </div>
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Device ID</th>
+                <th>Model</th>
+                <th>Android Version</th>
+                <th>Apps</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="deviceTable"></tbody>
+    </table>
+
+    <div class="mb-3">
+        <button class="btn btn-success" onclick="connectAppium('4729')" id="connectAppiumButton">Connect</button>
+        <span class="appium-status text-danger">Disconnected</span>
+    </div>
+
+    <script>
+        let isConnected = false;
+        let appiumPort;
+        let port;
+        let accountAPI;
+    
+        // Función para obtener los dispositivos y actualizar la tabla
+        async function fetchDevices() {
+            const response = await fetch('/devices');
+            const data = await response.json();
+
+            console.log(data);
+            
+            if (data.success) {
+                const table = document.getElementById('deviceTable');
+                const existingDevices = Array.from(table.children).map(row => row.id);
+                
+                // Itera sobre los dispositivos y actualiza solo las filas que cambiaron
+                data.devices.forEach(device => {
+                    let row = document.getElementById(device.id);
+                    
+                    if (!row) {
+                        // Si la fila no existe, se crea una nueva
+                        row = document.createElement('tr');
+                        row.id = device.id;
+                        row.innerHTML = `
+                            <td>${device.id}</td>
+                            <td>${device.model}</td>
+                            <td>${device.android_version}</td>
+                            <td>${device.apps.length}</td>
+                            <td>${device.status}</td>
+                            <td>
+                                <button class="btn btn-primary" onclick="viewDevice('${device.id}')">View</button>
+                            </td>
+                        `;
+                        table.appendChild(row);
+                    }
+                    // Verifica el estado de Appium para cada dispositivo
+                    checkAppiumStatus(appiumPort, device.id);
+                });
+    
+                // Elimina las filas de los dispositivos que ya no están presentes
+                existingDevices.forEach(deviceId => {
+                    if (!data.devices.find(device => device.id === deviceId)) {
+                        const rowToRemove = document.getElementById(deviceId);
+                        rowToRemove && rowToRemove.remove();
+                    }
+                });
+            }
+        }
+    
+        // Función para ver el dispositivo seleccionado
+        function viewDevice(deviceId) {
+            fetch(`/view/${deviceId}`);
+        }
+    
+        // Función para conectar Appium con el dispositivo seleccionado
+        function connectAppium(port) {
+            if(isConnected) {
+                alert('You are already connected');
+                return;
+            }
+
+            const accountAPI = document.getElementById('accountAPI').value;
+
+            if (!accountAPI) {
+                alert('Please enter the Account API');
+            }
+
+            //fetch post para enviar el accountAPI
+            fetch('/connect', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    accountAPI,
+                    devices: Array.from(document.querySelectorAll('tbody tr')).map(row => row.id) })
+            }).then(isConnected = true);
+        }
+
+        // Función para desconectar Appium del dispositivo seleccionado
+        function disconnectAppium(port) {
+            alert('Close the Appium server CMD and press OK');
+        }
+    
+        // Función para verificar el estado de Appium
+        function checkAppiumStatus(port) {
+            fetch(`/status/${port}`)
+                .then(res => res.json())
+                .then(data => {
+                    const status = document.querySelector('.appium-status');
+                    status.textContent = data.connected ? 'Connected' : 'Disconnected';
+                    status.classList.toggle('text-danger', !data.connected);
+                    status.classList.toggle('text-success', data.connected);
+
+                    //cambiar el botón de connect a disconnect en rojo.
+                    const connectButton = document.getElementById('connectAppiumButton');
+                    connectButton.textContent = data.connected ? 'Disconnect' : 'Connect';
+                    connectButton.classList.toggle('btn-danger', data.connected);
+                    connectButton.onclick = () => data.connected ? disconnectAppium(port) : connectAppium(port);
+                });
+        }
+    
+        // Función para obtener la configuración de la app y ngrok
+        async function config() {
+            const response = await fetch('/config');
+            const data = await response.json();
+    
+            if (data.success) {
+                document.getElementById('ngrokUrl').textContent = data.url;
+                document.getElementById('port').textContent = data.appium_port;
+                document.getElementById('proxyPort').textContent = data.proxy_port;
+                document.getElementById('accountAPI').value = data.accountAPI;
+                port = data.port;
+                appiumPort = data.appium_port;
+                accountAPI = data.accountAPI;
+            }
+        }
+
+        async function ping() {
+            await config();
+            await fetch('/ping');
+        }
+
+        setInterval(fetchDevices, 30000);
+        setInterval(ping, 5000);
+
+        fetchDevices();
+    </script>
+    
+</body>
+</html>
