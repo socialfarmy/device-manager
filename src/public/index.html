@@ -153,6 +153,7 @@
             const data = await response.json();
     
             if (data.success) {
+                console.log(data);
                 document.getElementById('ngrokUrl').textContent = data.url;
                 document.getElementById('port').textContent = data.appium_port;
                 document.getElementById('proxyPort').textContent = data.proxy_port;

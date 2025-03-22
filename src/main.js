@@ -23,7 +23,7 @@ const APPIUM_PORT = process.env.APPIUM_PORT || 4729;
 const PROXY_PORT = process.env.PROXY_PORT || 8089;
 const ACCOUNT_API = process.env.ACCOUNT_API;
 let SECRET_TOKEN = process.env.PASSWORD || 'socialfarmy';
-const NGROK_AUTH_TOKEN = process.env.NGROK_AUTH_TOKEN || '';
+const NGROK_AUTH_TOKEN = process.env.NGROK_AUTH_TOKEN;
 
 // Inicialización de paths después de que Electron esté listo
 function initializePaths() {
@@ -35,19 +35,31 @@ function initializePaths() {
 }
 
 // Configuración de Ngrok
-const startNgrok = async () => {
-    try {
-        ngrokTunnel = await ngrok.connect({
-            addr: APPIUM_PORT,
-            authtoken: NGROK_AUTH_TOKEN,
-            region: 'eu'
+const startCloudflareTunnel = () => {
+    return new Promise((resolve, reject) => {
+        const command = `cloudflared tunnel --url http://localhost:${APPIUM_PORT}`;
+
+        const tunnelProcess = exec(command);
+
+        // Capturamos los datos de error también
+        tunnelProcess.stderr.on('data', (data) => {
+            console.log(`🌍 Cloudflare Tunnel (stderr) Output: ${data}`);
+            const match = data.match(/https:\/\/[a-zA-Z0-9.-]+\.trycloudflare\.com/);
+            if (match) {
+                console.log(`🔗 URL del túnel (desde stderr): ${match[0]}`);
+                resolve(match[0]);  // Devuelve la URL
+            }
         });
-        console.log(`🌎 Ngrok tunnel establecido en: ${ngrokTunnel}`);
-        return ngrokTunnel;
-    } catch (error) {
-        console.error('❌ Error al iniciar ngrok:', error);
-        throw error;
-    }
+
+        tunnelProcess.stdout.on('data', (data) => {
+            console.log(`🌎 Cloudflare Tunnel (stdout) Output: ${data}`);
+        });
+
+        tunnelProcess.on('close', (code) => {
+            console.log(`🔴 Cloudflare Tunnel cerrado con código: ${code}`);
+            reject(`Cloudflare Tunnel cerrado con código ${code}`);
+        });
+    });
 };
 
 const stopNgrok = async () => {
@@ -340,13 +352,19 @@ function createWindow() {
 }
 
 // Ciclo de vida de la aplicación
-app.whenReady().then(() => {
+app.whenReady().then(async () => {  // Marcamos el callback como async
     initializePaths();
-    startNgrok();
     setupExpress();
     initServers();
     createWindow();
+
+    // Esperar que el túnel se haya establecido antes de continuar
+    ngrokTunnel = await startCloudflareTunnel();
+    //ngrocktunel es un objeto, como puedo verlo todo?
+    console.log(ngrokTunnel);
+    console.log(`🌐 Túnel creado en ${ngrokTunnel}`);
 });
+
 
 
 app.on('window-all-closed', () => {
