@@ -13,6 +13,7 @@ require('dotenv').config();
 // Variables de configuración
 let basePath;
 let scrcpyPath;
+let cloudFlaredPath;
 let ngrokTunnel = null;
 const appExpress = express();
 const proxyApp = express();
@@ -25,6 +26,7 @@ const ACCOUNT_API = process.env.ACCOUNT_API;
 let SECRET_TOKEN = process.env.PASSWORD || 'socialfarmy';
 const NGROK_AUTH_TOKEN = process.env.NGROK_AUTH_TOKEN;
 
+
 // Inicialización de paths después de que Electron esté listo
 function initializePaths() {
     basePath = app.isPackaged
@@ -32,12 +34,15 @@ function initializePaths() {
         : path.join(__dirname, 'resources');
 
     scrcpyPath = path.join(basePath, 'scrcpy', 'scrcpy.exe');
+    cloudFlaredPath = path.join(basePath, 'cloudflared','bin', 'cloudflared.exe');
+
 }
 
 // Configuración de Ngrok
 const startCloudflareTunnel = () => {
     return new Promise((resolve, reject) => {
-        const command = `cloudflared tunnel --url http://localhost:${APPIUM_PORT}`;
+        console.log('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'+cloudFlaredPath);
+        const command = `${cloudFlaredPath} tunnel --url http://localhost:${APPIUM_PORT}`;
 
         const tunnelProcess = exec(command);
 
