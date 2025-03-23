@@ -15,12 +15,38 @@
         }
         .connected { background-color: #28a745; }
         .disconnected { background-color: #dc3545; }
+
+        #ngrokUrl .loading-url::after {
+            content: '';
+            display: inline-block;
+            width: 1em;
+            height: 1em;
+            border: 2px solid #ddd;
+            border-radius: 50%;
+            border-top-color: #007bff;
+            animation: spin 1s linear infinite;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .config-loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+
+        .device-row td {
+            vertical-align: middle;
+        }
     </style>
 </head>
 <body class="container mt-4">
 <h2 class="mb-4">SocialFarmy ADB Device Manager</h2>
 
-<div class="card mb-4">
+<div class="card mb-4 config-loading" id="configCard">
     <div class="card-body">
         <h5 class="card-title">Connection Info</h5>
         <dl class="row mb-0">
@@ -28,7 +54,9 @@
             <dd class="col-sm-9" id="port">Loading...</dd>
 
             <dt class="col-sm-3">API URL</dt>
-            <dd class="col-sm-9" id="cloudUrl">Loading...</dd>
+            <dd class="col-sm-9" id="ngrokUrl">
+                <span class="loading-url">Generating...</span>
+            </dd>
 
             <dt class="col-sm-3">Public Port</dt>
             <dd class="col-sm-9" id="proxyPort">Loading...</dd>
@@ -94,33 +122,37 @@
 
 <script>
     (() => {
-        // State management
         const state = {
             isConnected: false,
             appiumPort: null,
             accountAPI: '',
             devices: [],
-            refreshInterval: null
+            refreshInterval: null,
+            configRetryAttempts: 0,
+            maxConfigRetries: 10,
+            devicesInterval: null,
+            statusInterval: null
         };
 
-        // DOM Elements
         const elements = {
             table: document.getElementById('deviceTable'),
             loadingRow: document.getElementById('loadingRow'),
             connectButton: document.getElementById('connectButton'),
             statusIndicator: document.querySelector('.status-indicator'),
-            statusText: document.querySelector('.appium-status')
+            statusText: document.querySelector('.appium-status'),
+            configCard: document.getElementById('configCard'),
+            ngrokUrl: document.getElementById('ngrokUrl'),
+            accountAPI: document.getElementById('accountAPI')
         };
 
-        // API Endpoints
         const endpoints = {
             DEVICES: '/devices',
             CONFIG: '/config',
             CONNECT: '/connect',
-            STATUS: '/status'
+            STATUS: '/status',
+            VIEW: '/view/'
         };
 
-        // Utility functions
         const sanitize = (str) => str.replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
         const createElement = (tag, attributes = {}) => {
@@ -131,29 +163,6 @@
             return el;
         };
 
-        // Device table rendering
-        const renderDeviceRow = (device) => {
-            const row = createElement('tr');
-            row.innerHTML = `
-                    <td>
-                        <span class="status-indicator ${device.status === 'connected' ? 'connected' : 'disconnected'}"></span>
-                    </td>
-                    <td>${sanitize(device.id)}</td>
-                    <td>${sanitize(device.model)}</td>
-                    <td>${sanitize(device.android_version)}</td>
-                    <td>${device.apps_count}</td>
-                    <td>
-                        <button class="btn btn-sm btn-outline-primary"
-                                data-device-id="${sanitize(device.id)}"
-                                onclick="viewDevice('${sanitize(device.id)}')">
-                            View Device
-                        </button>
-                    </td>
-                `;
-            return row;
-        };
-
-        // Data fetching
         const fetchData = async (url, options) => {
             try {
                 const response = await fetch(url, options);
@@ -165,21 +174,84 @@
             }
         };
 
-        // Device management
+        const updateConnectionInfo = (config) => {
+            if (config.url) {
+                elements.ngrokUrl.innerHTML = sanitize(config.url);
+                elements.configCard.classList.remove('config-loading');
+            } else {
+                elements.ngrokUrl.innerHTML = '<span class="text-danger">Failed to generate URL</span>';
+            }
+
+            document.getElementById('port').textContent = config.appium_port || 'N/A';
+            document.getElementById('proxyPort').textContent = config.proxy_port || 'N/A';
+            elements.accountAPI.value = config.accountAPI || '';
+            state.appiumPort = config.appium_port;
+        };
+
+        const fetchConfigWithRetry = async () => {
+            const config = await fetchData(endpoints.CONFIG);
+
+            if (config.url) {
+                updateConnectionInfo(config);
+                startConfigAutoRefresh();
+                return true;
+            }
+
+            if (state.configRetryAttempts < state.maxConfigRetries) {
+                state.configRetryAttempts++;
+                setTimeout(fetchConfigWithRetry, 2000);
+                elements.ngrokUrl.innerHTML =
+                    `<span class="loading-url">Generating (attempt ${state.configRetryAttempts}/${state.maxConfigRetries})</span>`;
+            } else {
+                elements.ngrokUrl.innerHTML = '<span class="text-danger">Failed to generate URL</span>';
+                elements.configCard.classList.remove('config-loading');
+            }
+            return false;
+        };
+
+        const startConfigAutoRefresh = () => {
+            setInterval(async () => {
+                const config = await fetchData(endpoints.CONFIG);
+                if (config.url && config.url !== state.appiumPort) {
+                    updateConnectionInfo(config);
+                }
+            }, 10000);
+        };
+
+        const renderDeviceRow = (device) => {
+            const row = createElement('tr', { className: 'device-row' });
+            row.innerHTML = `
+                    <td>
+                        <span class="status-indicator ${device.status === 'connected' ? 'connected' : 'disconnected'}"></span>
+                    </td>
+                    <td>${sanitize(device.id)}</td>
+                    <td>${sanitize(device.model)}</td>
+                    <td>${sanitize(device.android_version)}</td>
+                    <td>${device.apps_count}</td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary"
+                                onclick="window.viewDevice('${sanitize(device.id)}')">
+                            View Device
+                        </button>
+                    </td>
+                `;
+            return row;
+        };
+
         const updateDevices = async () => {
             const data = await fetchData(endpoints.DEVICES);
             if (!data.success) return;
 
-            elements.loadingRow.remove();
-            elements.table.innerHTML = '';
+            if (elements.loadingRow) elements.loadingRow.remove();
 
+            elements.table.innerHTML = '';
             state.devices = data.devices;
+
             state.devices.forEach(device => {
                 elements.table.appendChild(renderDeviceRow(device));
             });
         };
 
-        // Connection management
         const updateConnectionStatus = (connected) => {
             state.isConnected = connected;
             elements.statusIndicator.className = `status-indicator ${connected ? 'connected' : 'disconnected'}`;
@@ -195,7 +267,7 @@
         };
 
         const connectAppium = async () => {
-            const accountAPI = document.getElementById('accountAPI').value.trim();
+            const accountAPI = elements.accountAPI.value.trim();
             if (!accountAPI) {
                 alert('Please enter a valid API key');
                 return;
@@ -212,40 +284,38 @@
 
             if (response.success) {
                 updateConnectionStatus(true);
-                state.refreshInterval = setInterval(checkAppiumStatus, 5000);
+                state.statusInterval = setInterval(checkAppiumStatus, 5000);
             }
         };
 
         const disconnectAppium = () => {
-            clearInterval(state.refreshInterval);
+            clearInterval(state.statusInterval);
             updateConnectionStatus(false);
             alert('Please close the Appium server CMD window');
         };
 
-        // Initialization
-        const init = async () => {
-            // Load config
-            const config = await fetchData(endpoints.CONFIG);
-            if (config.success) {
-                document.getElementById('cloudUrl').textContent = config.url;
-                document.getElementById('port').textContent = config.appium_port;
-                document.getElementById('proxyPort').textContent = config.PROXY;
-                document.getElementById('accountAPI').value = config.accountAPI;
-                state.appiumPort = config.appium_port;
-            }
+        window.viewDevice = (deviceId) => {
+            fetch(`${endpoints.VIEW}${deviceId}`)
+                .catch(error => console.error('View device error:', error));
+        };
 
-            // Event listeners
+        const initEventListeners = () => {
             elements.connectButton.addEventListener('click', () => {
                 state.isConnected ? disconnectAppium() : connectAppium();
             });
-
-            // Initial data load
-            await updateDevices();
-            setInterval(updateDevices, 30000);
-            setInterval(checkAppiumStatus, 10000);
         };
 
-        // Start application
+        const init = async () => {
+            const initialConfig = await fetchData(endpoints.CONFIG);
+            initialConfig.url ? updateConnectionInfo(initialConfig) : fetchConfigWithRetry();
+
+            initEventListeners();
+            await updateDevices();
+
+            state.devicesInterval = setInterval(updateDevices, 30000);
+            state.statusInterval = setInterval(checkAppiumStatus, 10000);
+        };
+
         init();
     })();
 </script>
