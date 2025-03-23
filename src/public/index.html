@@ -183,7 +183,7 @@
             }
 
             document.getElementById('port').textContent = config.appium_port || 'N/A';
-            document.getElementById('proxyPort').textContent = config.proxy_port || 'N/A';
+            document.getElementById('proxyPort').textContent = config.PROXY || 'N/A';
             elements.accountAPI.value = config.accountAPI || '';
             state.appiumPort = config.appium_port;
         };
