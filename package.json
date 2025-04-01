@@ -1,6 +1,6 @@
 {
     "name": "socialfarmy-device-manager",
-    "version": "1.0.16",
+    "version": "1.0.17",
     "main": "src/main.js",
     "scripts": {
         "start": "electron .",

@@ -20,7 +20,8 @@ const CONFIG = {
     },
     PATHS: {
         SCRCPY: 'scrcpy/scrcpy.exe',
-        CLOUDFLARED: 'cloudflared/bin/cloudflared.exe'
+        CLOUDFLARED: 'cloudflared/bin/cloudflared.exe',
+        PLATFORM_TOOLS: 'platform-tools'
     },
     API: {
         ACCOUNT: process.env.ACCOUNT_API,
@@ -39,7 +40,8 @@ class PathManager {
 
         return {
             scrcpy: path.join(basePath, CONFIG.PATHS.SCRCPY),
-            cloudflared: path.join(basePath, CONFIG.PATHS.CLOUDFLARED)
+            cloudflared: path.join(basePath, CONFIG.PATHS.CLOUDFLARED),
+            platformTools: path.join(basePath, CONFIG.PATHS.PLATFORM_TOOLS)
         };
     }
 }
@@ -68,8 +70,10 @@ class TunnelService {
 }
 
 class DeviceService {
+    paths = PathManager.initialize();
     static async listDevices() {
-        const { stdout } = await exec('adb devices');
+        const paths = PathManager.initialize();
+        const { stdout } = await exec(paths.platformTools+'\\adb.exe devices');
         return stdout
             .split('\n')
             .slice(1)
@@ -101,14 +105,16 @@ class DeviceService {
     }
 
     static async getDeviceProperty(deviceId, prop) {
-        const { stdout } = await exec(`adb -s ${deviceId} shell getprop ${prop}`);
+        const paths = PathManager.initialize();
+        const { stdout } = await exec(`${paths.platformTools}\\adb.exe -s ${deviceId} shell getprop ${prop}`);
         return stdout.trim();
     }
 
     static async getInstalledApps(deviceId) {
+        const paths = PathManager.initialize();
         try {
             const { stdout } = await exec(
-                `adb -s ${deviceId} shell pm list packages -3`
+                `${paths.platformTools}\\adb.exe -s ${deviceId} shell pm list packages -3`
             );
             return stdout
                 .split('\n')
