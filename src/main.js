@@ -263,7 +263,7 @@ class ServerManager {
 
             await exec(
                 `start cmd /k appium -p ${CONFIG.PORTS.APPIUM} ` +
-                '--allow-insecure=adb_shell --relaxed-security'
+                '--allow-insecure=adb_shell --relaxed-security --default-command-timeout 600 --command-timeout 600'
             );
 
             res.json({
